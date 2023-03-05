@@ -4,13 +4,8 @@ import { Configuration, OpenAIApi } from "openai";
 
 interface GitHubUserInfoData {
   user: {
-    name: string;
     login: string;
     location: string;
-    contributionsCollection: {
-      totalCommitContributions: number;
-      restrictedContributionsCount: number;
-    };
     reposLangs: {
       nodes: {
         name: string;
@@ -54,6 +49,7 @@ interface GithubInfos {
   languages: {
     [k: string]: number;
   };
+  username: string;
 }
 
 async function getGithubInfos(githubUsername: string): Promise<GithubInfos> {
@@ -61,14 +57,9 @@ async function getGithubInfos(githubUsername: string): Promise<GithubInfos> {
     `
       query userInfo($githubUsername: String!) {
         user(login: $githubUsername) {
-          name
           login
           location
-          contributionsCollection {
-            totalCommitContributions
-            restrictedContributionsCount
-          }
-          reposLangs: repositories(ownerAffiliations: OWNER, isFork: false, first: 50) {
+          reposLangs: repositories(ownerAffiliations: OWNER, first: 100) {
             nodes {
               name
               languages(first: 10, orderBy: { field: SIZE, direction: DESC }) {
@@ -82,7 +73,7 @@ async function getGithubInfos(githubUsername: string): Promise<GithubInfos> {
               }
             }
           }
-          reposStars: repositories(first: 50, ownerAffiliations: OWNER, orderBy: {direction: DESC, field: STARGAZERS}) {
+          reposStars: repositories(first: 100, ownerAffiliations: OWNER, orderBy: {direction: DESC, field: STARGAZERS}) {
             totalCount
             nodes {
               name
@@ -117,15 +108,17 @@ async function getGithubInfos(githubUsername: string): Promise<GithubInfos> {
       },
       { total: 0 } as Record<string, number>
     ),
+    username: result.user.login,
   };
 }
 
-export async function generateGitHubProfile(githubUsername: string) {
+async function generateGitHubProfile(githubUsername: string) {
   const { languages, location, stars } = await getGithubInfos(githubUsername);
-  const prompt = `Write a GitHub profile description with emojis, with the following information:
-- Lives in ${location}\n- Wrote ${Object.entries(languages)
+  const prompt = `Write a GitHub profile description with 2 emojis maximum, with the following information:
+- Lives in ${location}
+- Wrote ${Object.entries(languages)
     .map(([name, count]) =>
-      (name === "total" || (count / languages.total) * 100) < 5
+      name === "total" || (count / languages.total) * 100 < 1
         ? ""
         : `${Math.ceil((count / languages.total) * 100)}% ${name}`
     )
@@ -136,16 +129,15 @@ export async function generateGitHubProfile(githubUsername: string) {
   const completion = await openai.createCompletion({
     model: "text-davinci-003",
     prompt,
-    temperature: 0.7,
+    temperature: 1,
     max_tokens: 256,
     top_p: 1,
-    n: 1,
-    // best_of: 2,
-    frequency_penalty: 0,
+    best_of: 5,
+    frequency_penalty: 1,
     presence_penalty: 0,
   });
 
-  return completion.data.choices;
+  return completion.data.choices[0].text;
 }
 
 export default defer(generateGitHubProfile, { concurrency: 10 });

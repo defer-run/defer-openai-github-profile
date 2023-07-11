@@ -1,4 +1,6 @@
 "use client";
+import generateGitHubProfile from "@/defer/generateGitHubProfile";
+import { useDeferRoute } from "@defer/client/next";
 import Link from "next/link";
 import {
   ChangeEventHandler,
@@ -10,59 +12,32 @@ import {
 
 export default function Home() {
   const [userName, updateUsername] = useState<string>();
+  const [generate, { loading, result }] =
+    useDeferRoute<typeof generateGitHubProfile>("/api/githubProfile");
 
   const onChange: ChangeEventHandler<HTMLInputElement> = useCallback((e) => {
     updateUsername(e.currentTarget.value);
   }, []);
 
-  const [pendingGenerationStatus, setPendingGenerationStatus] = useState<any>();
-  const intervalRef = useRef<number | null>();
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const pollExecution = (pendingExecId: string) => async () => {
-    const res = await fetch(`/api/githubProfile/${pendingExecId}`, {
-      method: "GET",
-    });
-    const data = await res.json();
-    setPendingGenerationStatus(await data);
-    if (
-      ["succeed", "failed"].includes((await data).state) &&
-      intervalRef.current
-    ) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  };
-
-  const generate: FormEventHandler<HTMLFormElement> = useCallback(
-    async (e) => {
-      e.preventDefault();
-      const result = await fetch(`/api/githubProfile/${userName}`, {
-        method: "POST",
-      });
-      const data = await result.json();
-      intervalRef.current = setInterval(
-        pollExecution(data.id),
-        500
-      ) as unknown as number;
-    },
-    [userName, pollExecution]
-  );
-
   const [copied, updateCopied] = useState(false);
 
   const onCopy = useCallback(() => {
-    navigator.clipboard.writeText(pendingGenerationStatus.result);
+    navigator.clipboard.writeText(result!);
     updateCopied(true);
     setTimeout(() => updateCopied(false), 1000);
-  }, [pendingGenerationStatus]);
+  }, [result]);
 
   return (
     <main className="container">
       <h1>GitHub Profile OpenAI Generator</h1>
       <p>Let ChatGPT generate a personalized GitHub Profile Readme for you</p>
 
-      <form onSubmit={generate}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          generate(userName!);
+        }}
+      >
         <div>
           <input
             type="text"
@@ -70,23 +45,15 @@ export default function Home() {
             onChange={onChange}
             className={"input"}
             placeholder={"Enter your GitHub username"}
-            disabled={["created", "started"].includes(
-              pendingGenerationStatus?.state
-            )}
+            disabled={loading}
           />
         </div>
         <div>
           <input
             type={"submit"}
             className="buttonPrimary"
-            disabled={["created", "started"].includes(
-              pendingGenerationStatus?.state
-            )}
-            value={
-              ["created", "started"].includes(pendingGenerationStatus?.state)
-                ? "Generating ..."
-                : "Generate"
-            }
+            disabled={loading}
+            value={loading ? "Generating ..." : "Generate"}
           />
         </div>
       </form>
@@ -130,14 +97,12 @@ export default function Home() {
           </svg>
         </Link>
       </div>
-      {pendingGenerationStatus && pendingGenerationStatus.result && (
+      {result && (
         <div className="codeblock-container">
           <div className="buttonTertiary codeblock-copy-btn" onClick={onCopy}>
             <div>{copied ? "Copied!" : "Copy"}</div>
           </div>
-          <div className="codeblock-content">
-            {pendingGenerationStatus.result}
-          </div>
+          <div className="codeblock-content">{result}</div>
         </div>
       )}
     </main>
